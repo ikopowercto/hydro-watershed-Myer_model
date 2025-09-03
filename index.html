@@ -135,11 +135,19 @@ document.getElementById('btnStations').onclick=async ()=>{
   });
 
   // afficher markers
-  stations.forEach((st)=>{
-    const marker=L.circleMarker([st.latitude,st.longitude],{color:'blue',radius:6}).addTo(map);
-    marker.bindPopup(`<b>${st.libelle_station}</b><br/>${st.libelle_cours_eau}<br/>
-      Surface: ${st.surface_bv_km2||'?'} km²<br/>Code: ${st.code_station}`);
-  });
+stations.forEach(st=>{
+  const lat = st.latitude_station || st.latitude;
+  const lon = st.longitude_station || st.longitude;
+  if(lat && lon){
+    L.circleMarker([lat, lon],{color:'blue',radius:6})
+      .addTo(map)
+      .bindPopup(`<b>${st.libelle_station}</b><br>${st.libelle_cours_eau}<br>
+                  Code: ${st.code_station}<br>
+                  Surface: ${st.surface_bv_km2||"?"} km²`);
+  } else {
+    console.warn("Station sans coordonnées", st);
+  }
+});
 
   document.getElementById('stationsList').textContent=`${stations.length} stations trouvées`;
 };
