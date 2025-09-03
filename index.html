@@ -24,13 +24,14 @@
     .hint{font-size:12px;color:#9aa3b2}
     #chartBox{background:#0b1536;border:1px solid #1e2a4e;
       border-radius:12px;padding:10px;margin-top:12px}
+    label.stationLbl{display:block;margin:4px 0;}
   </style>
 </head>
 <body>
 
 <header>
   <h1>💧 Estimation du débit – Méthode de Myer</h1>
-  <span>GitHub Pages + Proxy Render</span>
+  <span>Frontend GitHub Pages + Proxy Render</span>
 </header>
 
 <div id="app">
@@ -47,8 +48,8 @@
 
     <fieldset>
       <legend>2) Stations voisines</legend>
-      <label>Distance de recherche (km)</label>
-      <input id="distance" type="number" value="40000"/>
+      <label>Distance de recherche (m)</label>
+      <input id="distance" type="number" value="30000"/>
       <button id="btnStations" class="primary">🔎 Chercher stations</button>
       <div id="stationsList" class="hint">—</div>
     </fieldset>
@@ -61,8 +62,9 @@
 
     <fieldset>
       <legend>4) Calcul Myer</legend>
-      <button id="btnMyer" class="primary">📊 Calculer Myer</button>
-      <button id="btnCSV" disabled>⬇️ Export CSV</button>
+      <button id="btnMyer" class="primary">📊 Calculer Myer (stations cochées)</button>
+      <button id="btnCSV" disabled>⬇️ Export CSV Myer</button>
+      <button id="btnCSVRaw" disabled>⬇️ Export CSV(s) données brutes</button>
       <div id="resultMyer"></div>
     </fieldset>
 
@@ -81,11 +83,10 @@
 // ------------ CONFIG ----------------
 const proxyBase="https://hydro-watershed-myer-model-render-proxy.onrender.com";
 
-// ------------ MAP INIT ----------------
 const map=L.map('map').setView([46.5,2.5],6);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18}).addTo(map);
 
-let outletMarker=null, wsLayer=null, watershed=null, stations=[], chart=null;
+let outletMarker=null, wsLayer=null, watershed=null, stations=[], chart=null, seriesAll=[];
 
 // ------------ EXUTOIRE ----------------
 map.on('click',(e)=>{
@@ -112,7 +113,7 @@ document.getElementById('btnWs').onclick= async ()=>{
     `<div class="stat"><div>Surface</div><div>${area.toFixed(1)} km²</div></div>`;
 };
 
-// ------------ STATIONS VIA PROXY ----------------
+// ------------ STATIONS ----------------
 document.getElementById('btnStations').onclick=async ()=>{
   const lat=parseFloat(document.getElementById('lat').value),
         lng=parseFloat(document.getElementById('lng').value),
@@ -120,50 +121,57 @@ document.getElementById('btnStations').onclick=async ()=>{
   if(!lat||!lng) return alert("Choisissez un exutoire");
 
   const url=`${proxyBase}/stations?longitude=${lng}&latitude=${lat}&distance=${dist}`;
-  console.log("➡️ Appel stations:", url);
   const res=await fetch(url);
   const js=await res.json();
-  console.log("Stations réponse:", js);
 
   if(!js.data || !js.data.length){
-    alert("⚠️ Aucune station trouvée (élargissez la distance ou changez de point)");
+    alert("⚠️ Aucune station trouvée");
     return;
   }
   stations=js.data;
 
-  // Nettoyer anciens markers stations
+  // Nettoyer anciens markers
   map.eachLayer(layer=>{
     if(layer.options && layer.options.color==='blue') map.removeLayer(layer);
   });
 
-  // afficher markers
-  stations.forEach(st=>{
+  // afficher markers & liste avec cases
+  let html="";
+  stations.forEach((st,idx)=>{
     const lat=st.latitude_station;
     const lon=st.longitude_station;
     if(lat && lon){
       L.circleMarker([lat,lon],{color:'blue',radius:6})
         .addTo(map)
-        .bindPopup(`<b>${st.libelle_station}</b><br/>${st.libelle_cours_eau}<br/>
-        Code: ${st.code_station}<br/>Surface: ${st.surface_bv_km2||"?"} km²`);
+        .bindPopup(`<b>${st.libelle_station}</b><br>${st.libelle_cours_eau}`);
+      html+=`<label class="stationLbl">
+        <input type="checkbox" class="stationChk" value="${idx}" checked/>
+        ${st.libelle_station} <span style="color:#aaa;">(${st.code_station})</span>
+      </label>`;
     }
   });
-
-  document.getElementById('stationsList').textContent=`${stations.length} stations trouvées`;
+  document.getElementById('stationsList').innerHTML=html;
 };
 
 // ------------ CALCUL MYER ----------------
 document.getElementById('btnMyer').onclick=async ()=>{
-  if(!watershed) return alert("Délimitez un bassin avant");
+  if(!watershed) return alert("Délimitez un bassin");
   const start=document.getElementById('startDate').value;
   const end=document.getElementById('endDate').value;
   if(!start||!end) return alert("Choisissez une période");
-
   const basinArea=turf.area(watershed)/1e6;
-  let seriesAll=[];
-  for(const s of stations){
+
+  const selectedIdx=[...document.querySelectorAll('.stationChk:checked')].map(cb=>parseInt(cb.value));
+  const selectedStations=selectedIdx.map(i=>stations[i]);
+  if(!selectedStations.length){
+    alert("Sélectionnez au moins une station !");
+    return;
+  }
+
+  seriesAll=[];
+  for(const s of selectedStations){
     try{
       const url=`${proxyBase}/obs?code_entite=${s.code_station}&grandeur_hydro=Qmj&date_debut=${start}&date_fin=${end}`;
-      console.log("➡️ Appel obs:",url);
       const res=await fetch(url); const js=await res.json();
       if(js && js.data){
         const obs=js.data.map(o=>({date:o.date_obs_elab,q:parseFloat(o.resultat_obs)}));
@@ -171,7 +179,7 @@ document.getElementById('btnMyer').onclick=async ()=>{
       }
     }catch(e){console.warn("Erreur obs",s.code_station);}
   }
-  if(!seriesAll.length) return alert("Pas de séries Qmj trouvées");
+  if(!seriesAll.length) return alert("Pas de séries disponibles");
 
   const dates=seriesAll[0].series.map(o=>o.date);
   const result=dates.map(d=>{
@@ -192,14 +200,30 @@ document.getElementById('btnMyer').onclick=async ()=>{
      <div class="stat"><div>Q moyen</div><div>${meanQ.toFixed(2)} m³/s</div></div>
      <div class="stat"><div>Q max</div><div>${maxQ.toFixed(2)} m³/s</div></div>`;
 
-  // Export CSV
+  // Export CSV Myer
   let csv="date,q_m3s\n"+result.map(r=>`${r.date},${r.q}`).join("\n");
   const blob=new Blob([csv],{type:"text/csv"});
   const url=URL.createObjectURL(blob);
   const btn=document.getElementById('btnCSV');
   btn.disabled=false;
   btn.onclick=()=>{
-    const a=document.createElement("a"); a.href=url; a.download="debits_myer.csv"; a.click();
+    const a=document.createElement("a");
+    a.href=url; a.download="debits_myer.csv"; a.click();
+  };
+
+  // Export CSV brut(s)
+  const btnRaw=document.getElementById('btnCSVRaw');
+  btnRaw.disabled=false;
+  btnRaw.onclick=()=>{
+    seriesAll.forEach(s=>{
+      let csv="date,q_m3s\n"+s.series.map(r=>`${r.date},${r.q}`).join("\n");
+      const blob=new Blob([csv],{type:"text/csv"});
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement("a");
+      a.href=url;
+      a.download=`${s.station.code_station}_Qmj.csv`;
+      a.click();
+    });
   };
 
   // Graph
