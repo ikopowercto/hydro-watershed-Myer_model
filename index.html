@@ -29,7 +29,7 @@
 <body>
 
 <header>
-  <h1>💧 Estimation du débit – méthode de Myer</h1>
+  <h1>💧 Estimation du débit – Méthode de Myer</h1>
   <span>Frontend GitHub Pages + Proxy Render</span>
 </header>
 
@@ -77,12 +77,11 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 // ------------ CONFIG ----------------
-const proxyBase = "https://hydro-watershed-myer-model-render-proxy.onrender.com";
+const proxyBase = "https://hydro-watershed-myer-model-render-proxy.onrender.com"; // ton proxy Render
 
 // ------------ MAP INIT ----------------
 const map=L.map('map').setView([46.5,2.5],6);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-  maxZoom:18, attribution:'&copy; OpenStreetMap'}).addTo(map);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18}).addTo(map);
 
 let outletMarker=null, wsLayer=null, watershed=null, stations=[], chart=null;
 
@@ -108,7 +107,8 @@ document.getElementById('btnWs').onclick= async ()=>{
   wsLayer=L.geoJSON(watershed,{style:{color:'orange',weight:2,fillOpacity:0.2}}).addTo(map);
   map.fitBounds(wsLayer.getBounds());
   const area=turf.area(watershed)/1e6;
-  document.getElementById('wsStats').innerHTML=`<div class="stat"><div>Surface</div><div>${area.toFixed(1)} km²</div></div>`;
+  document.getElementById('wsStats').innerHTML=
+    `<div class="stat"><div>Surface</div><div>${area.toFixed(1)} km²</div></div>`;
 };
 
 // ------------ STATIONS VIA PROXY ----------------
@@ -118,22 +118,27 @@ document.getElementById('btnStations').onclick=async ()=>{
   if(!lat||!lng) return alert("Choisissez un exutoire");
 
   const url=`${proxyBase}/stations?longitude=${lng}&latitude=${lat}&distance=30000`;
-  console.log("➡️", url);
-  const res=await fetch(url); 
+  console.log("➡️ Appel stations:", url);
+  const res=await fetch(url);
   const js=await res.json();
   console.log("Stations réponse:", js);
+
   if(!js.data || !js.data.length){
-    alert("⚠️ Aucune station trouvée");
+    alert("⚠️ Aucune station trouvée (essayez un point différent ou augmentez la distance)");
     return;
   }
   stations=js.data;
+
+  // nettoyer anciens markers stations
+  map.eachLayer(layer=>{
+    if(layer.options && layer.options.color==='blue') map.removeLayer(layer);
+  });
 
   // afficher markers
   stations.forEach((st)=>{
     const marker=L.circleMarker([st.latitude,st.longitude],{color:'blue',radius:6}).addTo(map);
     marker.bindPopup(`<b>${st.libelle_station}</b><br/>${st.libelle_cours_eau}<br/>
-      Surface: ${st.surface_bv_km2||'?'} km²<br/>
-      Code: ${st.code_station}`);
+      Surface: ${st.surface_bv_km2||'?'} km²<br/>Code: ${st.code_station}`);
   });
 
   document.getElementById('stationsList').textContent=`${stations.length} stations trouvées`;
@@ -141,7 +146,7 @@ document.getElementById('btnStations').onclick=async ()=>{
 
 // ------------ CALCUL MYER ----------------
 document.getElementById('btnMyer').onclick=async ()=>{
-  if(!watershed) return alert("Délimitez d'abord un bassin");
+  if(!watershed) return alert("Délimitez un bassin d'abord");
   const start=document.getElementById('startDate').value;
   const end=document.getElementById('endDate').value;
   if(!start||!end) return alert("Choisissez une période");
@@ -152,7 +157,7 @@ document.getElementById('btnMyer').onclick=async ()=>{
   for(const s of stations){
     try{
       const url=`${proxyBase}/obs?code_entite=${s.code_station}&grandeur_hydro=Qmj&date_debut=${start}&date_fin=${end}`;
-      console.log("➡️",url);
+      console.log("➡️ Appel obs:", url);
       const res=await fetch(url); const js=await res.json();
       if(js && js.data){
         const obs=js.data.map(o=>({date:o.date_obs_elab,q:parseFloat(o.resultat_obs)}));
@@ -160,7 +165,7 @@ document.getElementById('btnMyer').onclick=async ()=>{
       }
     }catch(e){console.warn("Erreur obs",s.code_station);}
   }
-  if(!seriesAll.length) return alert("Pas de séries trouvées Qmj");
+  if(!seriesAll.length) return alert("Pas de séries Qmj trouvées dans la période");
 
   const dates=seriesAll[0].series.map(o=>o.date);
   const result=dates.map(d=>{
