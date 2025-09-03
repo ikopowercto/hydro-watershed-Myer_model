@@ -21,7 +21,6 @@
     .stat{display:flex;justify-content:space-between;padding:6px 8px;background:#0b1536;border:1px solid #1e2a4e;border-radius:10px;margin:4px 0}
     .hint{font-size:12px;color:#9aa3b2}
     #chartBox{background:#0b1536;border:1px solid #1e2a4e;border-radius:12px;padding:10px;margin-top:12px}
-    .stationItem{margin:4px 0;padding:6px;border-radius:6px;background:#121b3a}
   </style>
 </head>
 <body>
@@ -30,8 +29,8 @@
   <h1>💧 Débits estimés (Méthode de Myer, CSV Hydroportail)</h1>
   <div>
     <span class="pill">Delineator API</span>
-    <span class="pill">Stations Hubeau</span>
-    <span class="pill">Hydro CSV Import</span>
+    <span class="pill">Hydroportail (manuel)</span>
+    <span class="pill">CSV Import</span>
     <span class="pill">Chart.js</span>
   </div>
 </header>
@@ -49,15 +48,15 @@
     </fieldset>
 
     <fieldset>
-      <legend>2) Stations voisines</legend>
-      <button id="btnStations" class="primary">🔎 Trouver les stations</button>
-      <div id="stationsList" class="hint">Aucune.</div>
+      <legend>2) Stations voisines (Hydroportail)</legend>
+      <div class="hint">Cliquez sur le bouton ci-dessous pour ouvrir Hydroportail à proximité de votre point.</div>
+      <button id="btnHydro" class="primary">🔗 Ouvrir Hydroportail</button>
+      <div id="stationsList" class="hint"></div>
     </fieldset>
 
     <fieldset>
       <legend>3) Importer vos données Hydroportail</legend>
-      <div class="hint">Téléchargez les CSV depuis chaque station (Hydroportail) puis importez ici</div>
-      <label>Importer fichiers CSV (plusieurs autorisés)</label>
+      <div class="hint">Téléchargez les CSV depuis Hydroportail puis importez-les ici</div>
       <input type="file" id="csvFiles" multiple accept=".csv"/>
     </fieldset>
 
@@ -85,7 +84,7 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
   maxZoom:18, attribution:'&copy; OpenStreetMap'
 }).addTo(map);
 
-let outletMarker=null, wsLayer=null, watershed=null, stations=[], chart=null;
+let outletMarker=null, wsLayer=null, watershed=null, chart=null;
 let importedSeries=[];
 
 map.on('click',(e)=>{
@@ -95,7 +94,7 @@ map.on('click',(e)=>{
   outletMarker=L.marker(e.latlng).addTo(map);
 });
 
-// 1. Délimitation
+// 1. Delineation basin
 document.getElementById('btnWs').onclick= async ()=>{
   const lat=parseFloat(document.getElementById('lat').value),
         lng=parseFloat(document.getElementById('lng').value);
@@ -112,30 +111,17 @@ document.getElementById('btnWs').onclick= async ()=>{
   }catch(err){ alert("Échec calcul bassin"); }
 };
 
-// 2. Stations voisines
-document.getElementById('btnStations').onclick= async ()=>{
-  if(!watershed) return alert("Délimitez un bassin");
-  const lat=parseFloat(document.getElementById('lat').value),
-        lon=parseFloat(document.getElementById('lng').value);
-  const url=`https://hubeau.eaufrance.fr/api/v1/hydrometrie/referentiel/stations?latitude=${lat}&longitude=${lon}&distance=30000`;
-  try{
-    const res=await fetch(url); const js=await res.json();
-    stations=js.data;
-    if(!stations.length){document.getElementById('stationsList').innerHTML="Aucune station trouvée.";}
-    else{
-      document.getElementById('stationsList').innerHTML=stations.map(s=>
-        `<div class="stationItem">
-          <b>${s.libelle_station}</b><br/>
-          <span class="hint">${s.libelle_cours_eau}</span><br/>
-          Surface : ${s.superficie_bv||'?'} km²<br/>
-          <a href="https://hydro.eaufrance.fr/station/${s.code_station}" target="_blank">📂 Télécharger CSV</a>
-        </div>`
-      ).join('');
-    }
-  }catch(err){console.error(err); alert("Erreur API Hubeau");}
+// 2. Hydroportail link
+document.getElementById('btnHydro').onclick=()=>{
+  const lat=document.getElementById('lat').value;
+  const lon=document.getElementById('lng').value;
+  if(!lat||!lon){ alert("Sélectionnez d'abord un point"); return; }
+  const url=`https://hydro.eaufrance.fr/search?latitude=${lat}&longitude=${lon}&radius=30`;
+  window.open(url,"_blank");
+  document.getElementById('stationsList').innerHTML="Hydroportail ouvert dans un nouvel onglet 🌐";
 };
 
-// 3. Import CSV Hydroportail (intelligent)
+// 3. Import CSV simplifié (comme déjà codé avant)
 document.getElementById('csvFiles').addEventListener('change', (evt)=>{
   importedSeries=[];
   const files=evt.target.files;
@@ -144,12 +130,12 @@ document.getElementById('csvFiles').addEventListener('change', (evt)=>{
     reader.onload=(e)=>{
       const text=e.target.result;
       const lines=text.split(/\r?\n/).map(l=>l.trim()).filter(l=>l);
-      // chercher l'en-tête (dernière ligne avant les données commençant par AAAA-..)
       const headLine=lines.find(l=>l.toLowerCase().includes("date"));
+      if(!headLine){alert("Impossible de trouver l'en-tête date dans "+file.name); return;}
       const headers=headLine.split(";");
       const idxDate=headers.findIndex(h=>/date/i.test(h));
       const idxQ=headers.findIndex(h=>/(q|débit)/i.test(h));
-      if(idxDate<0||idxQ<0){alert("Impossible de trouver colonnes date/Q dans "+file.name);return;}
+      if(idxDate<0||idxQ<0){alert("Pas de colonne débit dans "+file.name); return;}
       const dataLines=lines.slice(lines.indexOf(headLine)+1);
       const series=dataLines.map(row=>{
         const cols=row.split(";");
@@ -158,7 +144,7 @@ document.getElementById('csvFiles').addEventListener('change', (evt)=>{
         return {date,q:!isNaN(q)?q:null};
       }).filter(r=>r.q!==null);
       importedSeries.push({name:file.name, series});
-      console.log("Importé ",file.name,series.length," valeurs");
+      console.log("Importé ",file.name, series.length," valeurs");
     };
     reader.readAsText(file);
   }
@@ -167,9 +153,8 @@ document.getElementById('csvFiles').addEventListener('change', (evt)=>{
 // 4. Calcul Myer
 document.getElementById('btnMyer').onclick=()=>{
   if(!watershed) return alert("Délimitez un bassin");
-  if(!importedSeries.length) return alert("Importez d'abord vos CSV Hydroportail");
+  if(!importedSeries.length) return alert("Importez vos CSV Hydroportail");
   const basinArea=turf.area(watershed)/1e6;
-  // collecter toutes les dates uniques
   let allDates=new Set();
   importedSeries.forEach(s=>s.series.forEach(r=>allDates.add(r.date)));
   const dates=[...allDates].sort();
@@ -188,7 +173,8 @@ document.getElementById('btnMyer').onclick=()=>{
     <div class="stat"><div>Fichiers utilisés</div><div>${importedSeries.length}</div></div>
     <div class="stat"><div>Q moyen</div><div>${meanQ.toFixed(2)} m³/s</div></div>
     <div class="stat"><div>Q max</div><div>${maxQ.toFixed(2)} m³/s</div></div>`;
-  // export CSV
+  
+  // CSV export
   let csv="date,q_m3s\n"+result.map(r=>`${r.date},${r.q}`).join("\n");
   const blob=new Blob([csv],{type:"text/csv"});
   const url=URL.createObjectURL(blob);
@@ -198,6 +184,7 @@ document.getElementById('btnMyer').onclick=()=>{
     const a=document.createElement("a");
     a.href=url; a.download="debits_myer.csv"; a.click();
   };
+  
   // Chart
   const labels=result.map(r=>r.date);
   const values=result.map(r=>r.q);
@@ -205,10 +192,8 @@ document.getElementById('btnMyer').onclick=()=>{
   if(chart) chart.destroy();
   chart=new Chart(document.getElementById('myChart'),{
     type:'line',
-    data:{labels,datasets:[{
-      label:'Débit estimé (m³/s)', data:values,
-      borderColor:'#6ee7b7', backgroundColor:'rgba(110,231,183,0.2)', tension:0.2
-    }]},
+    data:{labels,datasets:[{label:'Débit estimé (m³/s)',data:values,
+      borderColor:'#6ee7b7',backgroundColor:'rgba(110,231,183,0.2)',tension:0.2}]},
     options:{responsive:true,
       plugins:{legend:{labels:{color:'#f5f7fb'}}},
       scales:{x:{ticks:{color:'#ccc'}},y:{ticks:{color:'#ccc'}}}}
