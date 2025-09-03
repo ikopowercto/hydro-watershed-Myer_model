@@ -30,7 +30,7 @@
 
 <header>
   <h1>💧 Estimation du débit – Méthode de Myer</h1>
-  <span>Frontend GitHub Pages + Proxy Render</span>
+  <span>GitHub Pages + Proxy Render</span>
 </header>
 
 <div id="app">
@@ -47,7 +47,9 @@
 
     <fieldset>
       <legend>2) Stations voisines</legend>
-      <button id="btnStations" class="primary">🔎 Chercher stations proches</button>
+      <label>Distance de recherche (km)</label>
+      <input id="distance" type="number" value="40000"/>
+      <button id="btnStations" class="primary">🔎 Chercher stations</button>
       <div id="stationsList" class="hint">—</div>
     </fieldset>
 
@@ -77,7 +79,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 // ------------ CONFIG ----------------
-const proxyBase = "https://hydro-watershed-myer-model-render-proxy.onrender.com"; // ton proxy Render
+const proxyBase="https://hydro-watershed-myer-model-render-proxy.onrender.com";
 
 // ------------ MAP INIT ----------------
 const map=L.map('map').setView([46.5,2.5],6);
@@ -99,7 +101,6 @@ document.getElementById('btnWs').onclick= async ()=>{
   const lat=parseFloat(document.getElementById('lat').value),
         lng=parseFloat(document.getElementById('lng').value);
   if(isNaN(lat)||isNaN(lng)) return alert("Coordonnées invalides");
-
   const url=`https://mghydro.com/app/watershed_api?lat=${lat}&lng=${lng}&precision=high`;
   const res=await fetch(url); const geo=await res.json();
   watershed=geo.features[0];
@@ -114,58 +115,55 @@ document.getElementById('btnWs').onclick= async ()=>{
 // ------------ STATIONS VIA PROXY ----------------
 document.getElementById('btnStations').onclick=async ()=>{
   const lat=parseFloat(document.getElementById('lat').value),
-        lng=parseFloat(document.getElementById('lng').value);
+        lng=parseFloat(document.getElementById('lng').value),
+        dist=parseFloat(document.getElementById('distance').value||30000);
   if(!lat||!lng) return alert("Choisissez un exutoire");
 
-  const url=`${proxyBase}/stations?longitude=${lng}&latitude=${lat}&distance=30000`;
+  const url=`${proxyBase}/stations?longitude=${lng}&latitude=${lat}&distance=${dist}`;
   console.log("➡️ Appel stations:", url);
   const res=await fetch(url);
   const js=await res.json();
   console.log("Stations réponse:", js);
 
   if(!js.data || !js.data.length){
-    alert("⚠️ Aucune station trouvée (essayez un point différent ou augmentez la distance)");
+    alert("⚠️ Aucune station trouvée (élargissez la distance ou changez de point)");
     return;
   }
   stations=js.data;
 
-  // nettoyer anciens markers stations
+  // Nettoyer anciens markers stations
   map.eachLayer(layer=>{
     if(layer.options && layer.options.color==='blue') map.removeLayer(layer);
   });
 
   // afficher markers
-stations.forEach(st=>{
-  const lat = st.latitude_station || st.latitude;
-  const lon = st.longitude_station || st.longitude;
-  if(lat && lon){
-    L.circleMarker([lat, lon],{color:'blue',radius:6})
-      .addTo(map)
-      .bindPopup(`<b>${st.libelle_station}</b><br>${st.libelle_cours_eau}<br>
-                  Code: ${st.code_station}<br>
-                  Surface: ${st.surface_bv_km2||"?"} km²`);
-  } else {
-    console.warn("Station sans coordonnées", st);
-  }
-});
+  stations.forEach(st=>{
+    const lat=st.latitude_station;
+    const lon=st.longitude_station;
+    if(lat && lon){
+      L.circleMarker([lat,lon],{color:'blue',radius:6})
+        .addTo(map)
+        .bindPopup(`<b>${st.libelle_station}</b><br/>${st.libelle_cours_eau}<br/>
+        Code: ${st.code_station}<br/>Surface: ${st.surface_bv_km2||"?"} km²`);
+    }
+  });
 
   document.getElementById('stationsList').textContent=`${stations.length} stations trouvées`;
 };
 
 // ------------ CALCUL MYER ----------------
 document.getElementById('btnMyer').onclick=async ()=>{
-  if(!watershed) return alert("Délimitez un bassin d'abord");
+  if(!watershed) return alert("Délimitez un bassin avant");
   const start=document.getElementById('startDate').value;
   const end=document.getElementById('endDate').value;
   if(!start||!end) return alert("Choisissez une période");
 
   const basinArea=turf.area(watershed)/1e6;
   let seriesAll=[];
-
   for(const s of stations){
     try{
       const url=`${proxyBase}/obs?code_entite=${s.code_station}&grandeur_hydro=Qmj&date_debut=${start}&date_fin=${end}`;
-      console.log("➡️ Appel obs:", url);
+      console.log("➡️ Appel obs:",url);
       const res=await fetch(url); const js=await res.json();
       if(js && js.data){
         const obs=js.data.map(o=>({date:o.date_obs_elab,q:parseFloat(o.resultat_obs)}));
@@ -173,7 +171,7 @@ document.getElementById('btnMyer').onclick=async ()=>{
       }
     }catch(e){console.warn("Erreur obs",s.code_station);}
   }
-  if(!seriesAll.length) return alert("Pas de séries Qmj trouvées dans la période");
+  if(!seriesAll.length) return alert("Pas de séries Qmj trouvées");
 
   const dates=seriesAll[0].series.map(o=>o.date);
   const result=dates.map(d=>{
@@ -183,7 +181,7 @@ document.getElementById('btnMyer').onclick=async ()=>{
       const As=s.station.surface_bv_km2||basinArea;
       return o.q*(basinArea/As);
     }).filter(x=>x!==null);
-    return {date:d,q:qStations.length? qStations.reduce((a,b)=>a+b,0)/qStations.length:null};
+    return {date:d,q:qStations.length?qStations.reduce((a,b)=>a+b,0)/qStations.length:null};
   });
 
   const meanQ=result.reduce((a,r)=>a+(r.q||0),0)/result.length;
