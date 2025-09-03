@@ -1,72 +1,65 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Hydrologie - Estimation Myer</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Hydrologie – Méthode de Myer</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <style>
     body{margin:0;background:#0b1020;color:#f5f7fb;font:15px system-ui,Segoe UI,Roboto}
-    header{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;
-           border-bottom:1px solid #1f2742;background:#0e1430}
+    header{display:flex;align-items:center;justify-content:space-between;
+      padding:10px 14px;border-bottom:1px solid #1f2742;background:#0e1430}
     header h1{font-size:18px;margin:0}
     #app{display:grid;grid-template-columns:400px 1fr;min-height:calc(100vh - 58px)}
     #sidebar{padding:12px;border-right:1px solid #1f2742;background:#0e1430;overflow:auto}
     #map{width:100%;height:calc(100vh - 58px)}
-    fieldset{border:1px solid #24304f;border-radius:12px;padding:10px 12px;margin:0 0 12px}
+    fieldset{border:1px solid #24304f;border-radius:12px;padding:10px;margin-bottom:12px}
     legend{color:#9aa3b2}
-    input,button{width:100%;padding:8px;border-radius:10px;border:1px solid #2a3558;
-                 background:#10183a;color:#f5f7fb;margin-top:6px}
+    input,button{width:100%;padding:8px;border-radius:10px;
+      border:1px solid #2a3558;background:#10183a;color:#f5f7fb;margin-top:6px}
     button.primary{background:linear-gradient(135deg,#6ee7b7,#93c5fd);color:#0b1020;
-                   font-weight:600;border:none;cursor:pointer}
-    .stat{display:flex;justify-content:space-between;padding:6px 8px;background:#0b1536;
-          border:1px solid #1e2a4e;border-radius:10px;margin:4px 0}
+      font-weight:600;border:none;cursor:pointer}
+    .stat{display:flex;justify-content:space-between;
+      padding:6px 8px;background:#0b1536;border:1px solid #1e2a4e;
+      border-radius:10px;margin:4px 0}
     .hint{font-size:12px;color:#9aa3b2}
-    #chartBox{background:#0b1536;border:1px solid #1e2a4e;border-radius:12px;padding:10px;margin-top:12px}
+    #chartBox{background:#0b1536;border:1px solid #1e2a4e;
+      border-radius:12px;padding:10px;margin-top:12px}
   </style>
 </head>
 <body>
 
 <header>
   <h1>💧 Estimation de débit (Méthode de Myer)</h1>
-  <div><span>GitHub Pages front‑end</span></div>
+  <span>GitHub Pages + Proxy Render</span>
 </header>
 
 <div id="app">
   <aside id="sidebar">
-
-    <!-- Point d'étude -->
     <fieldset>
-      <legend>1) Choix du point</legend>
-      <div class="hint">Cliquez sur la carte pour placer un exutoire</div>
-      <input id="lat" type="number" step="any" placeholder="Latitude" />
-      <input id="lng" type="number" step="any" placeholder="Longitude" />
+      <legend>1) Choix de l'exutoire</legend>
+      <div class="hint">Cliquez sur la carte ou entrez des coordonnées</div>
+      <input id="lat" type="number" step="any" placeholder="Latitude"/>
+      <input id="lng" type="number" step="any" placeholder="Longitude"/>
       <button id="btnWs" class="primary">⚙️ Délimiter le bassin</button>
       <div id="wsStats"></div>
     </fieldset>
 
-    <!-- Hydro stations -->
     <fieldset>
-      <legend>2) Visualiser stations Hubeau</legend>
-      <div class="hint">Stations autour de l’exutoire via le portail de démo Hubeau</div>
-      <iframe id="hubeauFrame"
-              src="https://hubeau.eaufrance.fr/sites/default/files/api/demo/hydro_elab.htm?fdp=1"
-              width="100%" height="400"
-              style="border:1px solid #24304f;border-radius:12px;background:#fff;">
-      </iframe>
+      <legend>2) Stations voisines</legend>
+      <button id="btnStations" class="primary">🔎 Chercher stations proches</button>
+      <div id="stationsList" class="hint">Aucune station affichée.</div>
     </fieldset>
 
-    <!-- Import CSV -->
     <fieldset>
-      <legend>3) Importer CSV Hydroportail</legend>
-      <div class="hint">Téléchargez les CSV depuis hydro.eaufrance.fr puis importez‑les ici</div>
-      <input type="file" id="csvFiles" multiple accept=".csv"/>
+      <legend>3) Période d'analyse</legend>
+      <label>Début</label><input type="date" id="startDate"/>
+      <label>Fin</label><input type="date" id="endDate"/>
     </fieldset>
 
-    <!-- Calcul Myer -->
     <fieldset>
       <legend>4) Calcul Myer</legend>
-      <button id="btnMyer" class="primary">📈 Calculer</button>
+      <button id="btnMyer" class="primary">📈 Calculer avec stations sélectionnées</button>
       <button id="btnCSV" disabled>⬇️ Télécharger CSV</button>
       <div id="resultMyer"></div>
     </fieldset>
@@ -74,7 +67,6 @@
     <div id="chartBox" style="display:none;">
       <canvas id="myChart"></canvas>
     </div>
-
   </aside>
   <div id="map"></div>
 </div>
@@ -83,25 +75,23 @@
 <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-// ------------------ Carte Leaflet -----------------
 const map = L.map('map').setView([46.5,2.5],6);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
- {maxZoom:18, attribution:'&copy; OpenStreetMap'}).addTo(map);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+  maxZoom:18, attribution:'&copy; OpenStreetMap'}).addTo(map);
 
-let outletMarker=null, wsLayer=null, watershed=null, chart=null;
-let importedSeries=[];
+let outletMarker=null, wsLayer=null, watershed=null, stations=[], chart=null;
+const proxyBase="https://hydro-watershed-myer-model.onrender.com"; // ton proxy Render
 
-// on click → place exutoire + recalc iframe Hubeau
+// Clic carte = choisir exutoire
 map.on('click',(e)=>{
   const {lat,lng}=e.latlng;
   document.getElementById('lat').value=lat.toFixed(5);
   document.getElementById('lng').value=lng.toFixed(5);
   if(outletMarker) map.removeLayer(outletMarker);
   outletMarker=L.marker([lat,lng]).addTo(map);
-  updateHubeauFrame(lat,lng);
 });
 
-// -------- Bassin via mghydro -----------------------
+// Délimiter bassin
 document.getElementById('btnWs').onclick= async ()=>{
   const lat=parseFloat(document.getElementById('lat').value),
         lng=parseFloat(document.getElementById('lng').value);
@@ -115,69 +105,81 @@ document.getElementById('btnWs').onclick= async ()=>{
     map.fitBounds(wsLayer.getBounds());
     const area=turf.area(watershed)/1e6;
     document.getElementById('wsStats').innerHTML=
-       `<div class="stat"><div>Surface</div><div>${area.toFixed(1)} km²</div></div>`;
-  }catch(err){ alert("Échec calcul bassin"); }
+      `<div class="stat"><div>Surface</div><div>${area.toFixed(1)} km²</div></div>`;
+  }catch(err){ alert("Échec calcul bassin : "+err); }
 };
 
-// --------- Hubeau iFrame dynamic ------------------
-function updateHubeauFrame(lat,lon){
-  const url=`https://hubeau.eaufrance.fr/sites/default/files/api/demo/hydro_elab.htm?coord=${lon},${lat}&fdp=1`;
-  document.getElementById('hubeauFrame').src=url;
-}
+// Rechercher et afficher stations voisines
+document.getElementById('btnStations').onclick= async ()=>{
+  const lat=parseFloat(document.getElementById('lat').value),
+        lng=parseFloat(document.getElementById('lng').value);
+  if(!lat||!lng) return alert("Sélectionnez un exutoire");
 
-// --------- Import CSV Hydroportail ----------------
-document.getElementById('csvFiles').addEventListener('change',(evt)=>{
-  importedSeries=[];
-  const files=evt.target.files;
-  for(const file of files){
-    const reader=new FileReader();
-    reader.onload=(e)=>{
-      const text=e.target.result;
-      const lines=text.split(/\r?\n/).map(l=>l.trim()).filter(l=>l);
-      const headLine=lines.find(l=>l.toLowerCase().includes("date"));
-      if(!headLine){alert("Pas d’entête date dans "+file.name); return;}
-      const headers=headLine.split(";");
-      const idxDate=headers.findIndex(h=>/date/i.test(h));
-      const idxQ=headers.findIndex(h=>/(q|débit)/i.test(h));
-      if(idxDate<0||idxQ<0){alert("Pas de colonne Q trouvé dans "+file.name); return;}
-      const dataLines=lines.slice(lines.indexOf(headLine)+1);
-      const series=dataLines.map(row=>{
-        const cols=row.split(";");
-        const date=cols[idxDate];
-        const q=parseFloat((cols[idxQ]||"").replace(",","."));
-        return {date,q:!isNaN(q)?q:null};
-      }).filter(r=>r.q!==null);
-      importedSeries.push({name:file.name,series});
-      console.log("Import CSV:",file.name,series.length,"valeurs");
-    };
-    reader.readAsText(file);
-  }
-});
+  const url=`${proxyBase}/stations?longitude=${lng}&latitude=${lat}&distance=30000`;
+  try{
+    const res=await fetch(url);
+    const js=await res.json();
+    stations=js.data;
+    // Nettoyer anciens markers
+    map.eachLayer(layer=>{
+      if(layer.options && layer.options.color==='blue'){ map.removeLayer(layer); }
+    });
+    // Ajouter markers
+    stations.forEach((st,i)=>{
+      const marker=L.circleMarker([st.latitude,st.longitude],{color:'blue',radius:6}).addTo(map);
+      marker.bindPopup(`<b>${st.libelle_station}</b><br/>${st.libelle_cours_eau}
+        <br/>Surface: ${st.surface_bv_km2||'?' } km²<br/>Code: ${st.code_station}
+        <br/><input type='checkbox' class='stationChk' value='${i}' checked/> Utiliser pour Myer`);
+    });
+    document.getElementById('stationsList').innerHTML=
+      stations.length+" station(s) affichée(s) sur la carte (cochez dans popup).";
+  }catch(err){alert("Erreur récupération stations : "+err);}
+};
 
-// -------- Calcul Myer -----------------------------
-document.getElementById('btnMyer').onclick=()=>{
-  if(!watershed) return alert("Délimitez un bassin");
-  if(!importedSeries.length) return alert("Importez vos CSV Hydroportail");
+// Calcul Myer
+document.getElementById('btnMyer').onclick= async ()=>{
+  if(!watershed) return alert("Délimitez d'abord un bassin");
+  if(!stations.length) return alert("Chargez les stations");
+  const start=document.getElementById('startDate').value;
+  const end=document.getElementById('endDate').value;
+  if(!start||!end) return alert("Choisissez une période");
   const basinArea=turf.area(watershed)/1e6;
-  let allDates=new Set();
-  importedSeries.forEach(s=>s.series.forEach(r=>allDates.add(r.date)));
-  const dates=[...allDates].sort();
-  let result=[];
-  for(const d of dates){
-    const qStations=importedSeries.map(s=>{
-      const r=s.series.find(rr=>rr.date===d);
-      return r? r.q*(basinArea/(s.area||basinArea)) : null;
-    }).filter(x=>x!==null);
-    const qEst=qStations.length? qStations.reduce((a,b)=>a+b,0)/qStations.length : null;
-    result.push({date:d,q:qEst});
+
+  // -> Pour démo simple : on prend toutes stations (cochage dans popup Leaflet demanderait UI plus avancée)
+  const selected=stations;
+
+  let seriesAll=[];
+  for(const s of selected){
+    try{
+      const url=`${proxyBase}/obs?code_entite=${s.code_station}&grandeur_hydro=Qmj&date_debut=${start}&date_fin=${end}`;
+      const res=await fetch(url);
+      const js=await res.json();
+      const obs=js.data.map(o=>({date:o.date_obs_elab, q:parseFloat(o.resultat_obs)}));
+      if(obs.length){seriesAll.push({station:s,series:obs});}
+    }catch(err){console.warn("Erreur obs station",s.code_station);}
   }
+  if(!seriesAll.length) return alert("Pas de données Qmj dispo");
+
+  const dates=seriesAll[0].series.map(o=>o.date);
+  const result=dates.map(d=>{
+    const qStations=seriesAll.map(s=>{
+      const o=s.series.find(x=>x.date===d);
+      if(!o||isNaN(o.q)) return null;
+      const As=s.station.surface_bv_km2||basinArea;
+      return o.q*(basinArea/As);
+    }).filter(x=>x!==null);
+    return {date:d, q:qStations.length? qStations.reduce((a,b)=>a+b,0)/qStations.length : null};
+  });
+
   const meanQ=result.reduce((a,r)=>a+(r.q||0),0)/result.length;
-  const maxQ=Math.max(...result.filter(r=>r.q!==null).map(r=>r.q));
+  const maxQ=Math.max(...result.filter(r=>r.q).map(r=>r.q));
+
   document.getElementById('resultMyer').innerHTML=`
-    <div class="stat"><div>Fichiers utilisés</div><div>${importedSeries.length}</div></div>
+    <div class="stat"><div>Stations utilisées</div><div>${seriesAll.length}</div></div>
     <div class="stat"><div>Q moyen</div><div>${meanQ.toFixed(2)} m³/s</div></div>
     <div class="stat"><div>Q max</div><div>${maxQ.toFixed(2)} m³/s</div></div>`;
-  // CSV export
+
+  // Export CSV
   let csv="date,q_m3s\n"+result.map(r=>`${r.date},${r.q}`).join("\n");
   const blob=new Blob([csv],{type:"text/csv"});
   const url=URL.createObjectURL(blob);
@@ -187,17 +189,19 @@ document.getElementById('btnMyer').onclick=()=>{
     const a=document.createElement("a");
     a.href=url; a.download="debits_myer.csv"; a.click();
   };
-  // Chart
+
+  // Graph
   const labels=result.map(r=>r.date);
   const values=result.map(r=>r.q);
   document.getElementById('chartBox').style.display="block";
   if(chart) chart.destroy();
   chart=new Chart(document.getElementById('myChart'),{
     type:'line',
-    data:{labels,datasets:[{label:'Débit estimé (m³/s)', data:values,
-      borderColor:'#6ee7b7', backgroundColor:'rgba(110,231,183,0.2)', tension:0.2}]},
-    options:{responsive:true, plugins:{legend:{labels:{color:'#f5f7fb'}}},
-             scales:{x:{ticks:{color:'#ccc'}}, y:{ticks:{color:'#ccc'}}}}
+    data:{labels,datasets:[{label:'Débit estimé (m³/s)',data:values,
+      borderColor:'#6ee7b7',backgroundColor:'rgba(110,231,183,0.2)',tension:0.2}]},
+    options:{responsive:true,
+      plugins:{legend:{labels:{color:'#f5f7fb'}}},
+      scales:{x:{ticks:{color:'#ccc'}},y:{ticks:{color:'#ccc'}}}}
   });
 };
 </script>
