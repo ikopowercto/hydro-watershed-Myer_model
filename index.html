@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Hydrologie – Méthode de Myer</title>
+  <title>Hydrologie – Estimation Myer (Proxy Render)</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <style>
-    body{margin:0;background:#0b1020;color:#f5f7fb;font:15px system-ui,Segoe UI,Roboto}
+    body{margin:0;background:#0b1020;color:#f5f7fb;font:15px system-ui}
     header{display:flex;align-items:center;justify-content:space-between;
       padding:10px 14px;border-bottom:1px solid #1f2742;background:#0e1430}
     header h1{font-size:18px;margin:0}
@@ -19,9 +19,8 @@
       border:1px solid #2a3558;background:#10183a;color:#f5f7fb;margin-top:6px}
     button.primary{background:linear-gradient(135deg,#6ee7b7,#93c5fd);color:#0b1020;
       font-weight:600;border:none;cursor:pointer}
-    .stat{display:flex;justify-content:space-between;
-      padding:6px 8px;background:#0b1536;border:1px solid #1e2a4e;
-      border-radius:10px;margin:4px 0}
+    .stat{display:flex;justify-content:space-between;padding:6px 8px;
+      background:#0b1536;border:1px solid #1e2a4e;border-radius:10px;margin:4px 0}
     .hint{font-size:12px;color:#9aa3b2}
     #chartBox{background:#0b1536;border:1px solid #1e2a4e;
       border-radius:12px;padding:10px;margin-top:12px}
@@ -30,37 +29,37 @@
 <body>
 
 <header>
-  <h1>💧 Estimation de débit (Méthode de Myer)</h1>
+  <h1>💧 Estimation débit (Méthode de Myer)</h1>
   <span>GitHub Pages + Proxy Render</span>
 </header>
 
 <div id="app">
   <aside id="sidebar">
     <fieldset>
-      <legend>1) Choix de l'exutoire</legend>
-      <div class="hint">Cliquez sur la carte ou entrez des coordonnées</div>
-      <input id="lat" type="number" step="any" placeholder="Latitude"/>
-      <input id="lng" type="number" step="any" placeholder="Longitude"/>
-      <button id="btnWs" class="primary">⚙️ Délimiter le bassin</button>
+      <legend>1) Choix du point</legend>
+      <div class="hint">Cliquez sur la carte</div>
+      <input id="lat" type="number" placeholder="Latitude"/>
+      <input id="lng" type="number" placeholder="Longitude"/>
+      <button id="btnWs" class="primary">⚙️ Délimiter bassin</button>
       <div id="wsStats"></div>
     </fieldset>
 
     <fieldset>
       <legend>2) Stations voisines</legend>
-      <button id="btnStations" class="primary">🔎 Chercher stations proches</button>
-      <div id="stationsList" class="hint">Aucune station affichée.</div>
+      <button id="btnStations" class="primary">🔎 Chercher stations</button>
+      <div id="stationsList" class="hint">—</div>
     </fieldset>
 
     <fieldset>
-      <legend>3) Période d'analyse</legend>
+      <legend>3) Période</legend>
       <label>Début</label><input type="date" id="startDate"/>
       <label>Fin</label><input type="date" id="endDate"/>
     </fieldset>
 
     <fieldset>
       <legend>4) Calcul Myer</legend>
-      <button id="btnMyer" class="primary">📈 Calculer avec stations sélectionnées</button>
-      <button id="btnCSV" disabled>⬇️ Télécharger CSV</button>
+      <button id="btnMyer" class="primary">📊 Calculer Myer</button>
+      <button id="btnCSV" disabled>⬇️ Export CSV</button>
       <div id="resultMyer"></div>
     </fieldset>
 
@@ -75,14 +74,13 @@
 <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-const map = L.map('map').setView([46.5,2.5],6);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-  maxZoom:18, attribution:'&copy; OpenStreetMap'}).addTo(map);
+const proxyBase="https://hydro-watershed-myer-model-render-proxy.onrender.com"; // 👈 ton proxy Render
+const map=L.map('map').setView([46.5,2.5],6);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18}).addTo(map);
 
 let outletMarker=null, wsLayer=null, watershed=null, stations=[], chart=null;
-const proxyBase="https://hydro-watershed-myer-model.onrender.com"; // ton proxy Render
 
-// Clic carte = choisir exutoire
+// Exutoire
 map.on('click',(e)=>{
   const {lat,lng}=e.latlng;
   document.getElementById('lat').value=lat.toFixed(5);
@@ -97,66 +95,51 @@ document.getElementById('btnWs').onclick= async ()=>{
         lng=parseFloat(document.getElementById('lng').value);
   if(isNaN(lat)||isNaN(lng)) return alert("Coordonnées invalides");
   const url=`https://mghydro.com/app/watershed_api?lat=${lat}&lng=${lng}&precision=high`;
-  try{
-    const res=await fetch(url); const geo=await res.json();
-    watershed=geo.features[0];
-    if(wsLayer) map.removeLayer(wsLayer);
-    wsLayer=L.geoJSON(watershed,{style:{color:'orange',weight:2,fillOpacity:0.2}}).addTo(map);
-    map.fitBounds(wsLayer.getBounds());
-    const area=turf.area(watershed)/1e6;
-    document.getElementById('wsStats').innerHTML=
-      `<div class="stat"><div>Surface</div><div>${area.toFixed(1)} km²</div></div>`;
-  }catch(err){ alert("Échec calcul bassin : "+err); }
+  const res=await fetch(url); const geo=await res.json();
+  watershed=geo.features[0];
+  if(wsLayer) map.removeLayer(wsLayer);
+  wsLayer=L.geoJSON(watershed,{style:{color:'orange',weight:2,fillOpacity:0.2}}).addTo(map);
+  map.fitBounds(wsLayer.getBounds());
+  const area=turf.area(watershed)/1e6;
+  document.getElementById('wsStats').innerHTML=`<div class="stat"><div>Surface</div><div>${area.toFixed(1)} km²</div></div>`;
 };
 
-// Rechercher et afficher stations voisines
-document.getElementById('btnStations').onclick= async ()=>{
+// Chercher stations via proxy
+document.getElementById('btnStations').onclick=async ()=>{
   const lat=parseFloat(document.getElementById('lat').value),
         lng=parseFloat(document.getElementById('lng').value);
-  if(!lat||!lng) return alert("Sélectionnez un exutoire");
-
+  if(!lat||!lng) return alert("Choisissez un exutoire");
   const url=`${proxyBase}/stations?longitude=${lng}&latitude=${lat}&distance=30000`;
-  try{
-    const res=await fetch(url);
-    const js=await res.json();
-    stations=js.data;
-    // Nettoyer anciens markers
-    map.eachLayer(layer=>{
-      if(layer.options && layer.options.color==='blue'){ map.removeLayer(layer); }
-    });
-    // Ajouter markers
-    stations.forEach((st,i)=>{
-      const marker=L.circleMarker([st.latitude,st.longitude],{color:'blue',radius:6}).addTo(map);
-      marker.bindPopup(`<b>${st.libelle_station}</b><br/>${st.libelle_cours_eau}
-        <br/>Surface: ${st.surface_bv_km2||'?' } km²<br/>Code: ${st.code_station}
-        <br/><input type='checkbox' class='stationChk' value='${i}' checked/> Utiliser pour Myer`);
-    });
-    document.getElementById('stationsList').innerHTML=
-      stations.length+" station(s) affichée(s) sur la carte (cochez dans popup).";
-  }catch(err){alert("Erreur récupération stations : "+err);}
+  const res=await fetch(url); const js=await res.json();
+  if(!js.data){alert("Pas de données reçues");return;}
+  stations=js.data;
+  // afficher markers
+  stations.forEach((st,i)=>{
+    const marker=L.circleMarker([st.latitude,st.longitude],{color:'blue',radius:6}).addTo(map);
+    marker.bindPopup(`<b>${st.libelle_station}</b><br>${st.libelle_cours_eau}<br/>
+      Surface: ${st.surface_bv_km2||'?'} km²<br/>Code: ${st.code_station}`);
+  });
+  document.getElementById('stationsList').textContent=`${stations.length} stations trouvées`;
 };
 
 // Calcul Myer
-document.getElementById('btnMyer').onclick= async ()=>{
-  if(!watershed) return alert("Délimitez d'abord un bassin");
-  if(!stations.length) return alert("Chargez les stations");
+document.getElementById('btnMyer').onclick=async ()=>{
+  if(!watershed) return alert("Délimitez un bassin");
   const start=document.getElementById('startDate').value;
   const end=document.getElementById('endDate').value;
   if(!start||!end) return alert("Choisissez une période");
   const basinArea=turf.area(watershed)/1e6;
 
-  // -> Pour démo simple : on prend toutes stations (cochage dans popup Leaflet demanderait UI plus avancée)
-  const selected=stations;
-
   let seriesAll=[];
-  for(const s of selected){
+  for(const s of stations){
     try{
       const url=`${proxyBase}/obs?code_entite=${s.code_station}&grandeur_hydro=Qmj&date_debut=${start}&date_fin=${end}`;
-      const res=await fetch(url);
-      const js=await res.json();
-      const obs=js.data.map(o=>({date:o.date_obs_elab, q:parseFloat(o.resultat_obs)}));
-      if(obs.length){seriesAll.push({station:s,series:obs});}
-    }catch(err){console.warn("Erreur obs station",s.code_station);}
+      const res=await fetch(url); const js=await res.json();
+      if(js && js.data){
+        const obs=js.data.map(o=>({date:o.date_obs_elab,q:parseFloat(o.resultat_obs)}));
+        if(obs.length) seriesAll.push({station:s,series:obs});
+      }
+    }catch(e){console.warn("Erreur obs",s.code_station);}
   }
   if(!seriesAll.length) return alert("Pas de données Qmj dispo");
 
@@ -168,16 +151,15 @@ document.getElementById('btnMyer').onclick= async ()=>{
       const As=s.station.surface_bv_km2||basinArea;
       return o.q*(basinArea/As);
     }).filter(x=>x!==null);
-    return {date:d, q:qStations.length? qStations.reduce((a,b)=>a+b,0)/qStations.length : null};
+    return {date:d,q:qStations.length? qStations.reduce((a,b)=>a+b,0)/qStations.length:null};
   });
 
   const meanQ=result.reduce((a,r)=>a+(r.q||0),0)/result.length;
-  const maxQ=Math.max(...result.filter(r=>r.q).map(r=>r.q));
-
-  document.getElementById('resultMyer').innerHTML=`
-    <div class="stat"><div>Stations utilisées</div><div>${seriesAll.length}</div></div>
-    <div class="stat"><div>Q moyen</div><div>${meanQ.toFixed(2)} m³/s</div></div>
-    <div class="stat"><div>Q max</div><div>${maxQ.toFixed(2)} m³/s</div></div>`;
+  const maxQ=Math.max(...result.filter(r=>r.q!==null).map(r=>r.q));
+  document.getElementById('resultMyer').innerHTML=
+    `<div class="stat"><div>Stations utilisées</div><div>${seriesAll.length}</div></div>
+     <div class="stat"><div>Q moyen</div><div>${meanQ.toFixed(2)} m³/s</div></div>
+     <div class="stat"><div>Q max</div><div>${maxQ.toFixed(2)} m³/s</div></div>`;
 
   // Export CSV
   let csv="date,q_m3s\n"+result.map(r=>`${r.date},${r.q}`).join("\n");
@@ -186,8 +168,7 @@ document.getElementById('btnMyer').onclick= async ()=>{
   const btn=document.getElementById('btnCSV');
   btn.disabled=false;
   btn.onclick=()=>{
-    const a=document.createElement("a");
-    a.href=url; a.download="debits_myer.csv"; a.click();
+    const a=document.createElement("a"); a.href=url; a.download="debits_myer.csv"; a.click();
   };
 
   // Graph
@@ -197,11 +178,9 @@ document.getElementById('btnMyer').onclick= async ()=>{
   if(chart) chart.destroy();
   chart=new Chart(document.getElementById('myChart'),{
     type:'line',
-    data:{labels,datasets:[{label:'Débit estimé (m³/s)',data:values,
+    data:{labels,datasets:[{label:'Débit estimé',data:values,
       borderColor:'#6ee7b7',backgroundColor:'rgba(110,231,183,0.2)',tension:0.2}]},
-    options:{responsive:true,
-      plugins:{legend:{labels:{color:'#f5f7fb'}}},
-      scales:{x:{ticks:{color:'#ccc'}},y:{ticks:{color:'#ccc'}}}}
+    options:{scales:{x:{ticks:{color:'#eee'}},y:{ticks:{color:'#eee'}}}}
   });
 };
 </script>
